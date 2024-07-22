@@ -1,8 +1,8 @@
 from gql import gql, Client
-from typing import Optional
+from typing import Optional, Dict
 
 
-def get_issue(client: Client, issue_id: str):
+def get_issue(client: Client, issue_id: str) -> Dict:
     query = gql(
         """
         query Issue {{
@@ -19,7 +19,7 @@ def get_issue(client: Client, issue_id: str):
 
 # TODO(vcd): Maybe we can use GPT or some basic string parsing 
 # to get the team id from a list of teams in linear?
-def list_issues(client: Client, team_id: str):
+def list_issues(client: Client, team_id: str) -> Dict:
     query = gql(
         """
         query Team {{
@@ -47,7 +47,7 @@ def list_issues(client: Client, team_id: str):
     result = client.execute(query)
     return result
 
-def create_issue(client: Client, title: str, description: str, team_id: str):
+def create_issue(client: Client, title: str, description: str, team_id: str) -> Dict:
     query = gql(
         """
         mutation IssueCreate {{
@@ -75,7 +75,7 @@ def create_issue(client: Client, title: str, description: str, team_id: str):
     result = client.execute(query)
     return result
 
-def edit_issue(client: Client, issue_id: str, new_title: Optional[str] = None, new_description: Optional[str] = None):
+def edit_issue(client: Client, issue_id: str, new_title: Optional[str] = None, new_description: Optional[str] = None) -> Dict:
     issue = get_issue(client, issue_id)["issue"]
     if new_title is None:
         new_title = issue["title"]
@@ -110,5 +110,3 @@ def edit_issue(client: Client, issue_id: str, new_title: Optional[str] = None, n
     )
     result = client.execute(query)
     return result
-
-# TODO(vcd): For a production app I would implement some sort of test cases
