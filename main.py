@@ -120,54 +120,116 @@ def _handle_other(_description: str):
     """ Placeholder for handling a message that isn't a bug report or feature request """
     pass
 
-# TODO: We shouldn't to separate this from dedup'ing from existing tasks
+# Is it advantageous to have one prompt per linear task? Or one prompt for all linear tasks?
+# An evaluation suite will help answer this question.
 def categorize_conversation(conversation: str):
     """
 
     """
-    prompt = f"Does the following conversation depict a bug report, feature request, or neither?  {conversation}. If it's a bug report, can you ingest it into Linear?"
+    transport = AIOHTTPTransport(
+        url="https://api.linear.app/graphql",
+        headers={"Authorization": LINEAR_KEY},
+    )
+    linear_client = Client(transport=transport, fetch_schema_from_transport=True)
     openai_client = OpenAI(
         api_key=OPENAI_KEY,
     )
-    messages = [
+
+    issues = list_issues(
+        client=linear_client,
+        team_id=LINEAR_TEAM_ID
+    )["team"]["issues"]["nodes"]
+    for issue in issues:
+        prompt = f"""Does the following conversation describe a new bug report and/or feature request that isn't described in the following existing task?
+        Conversation: {conversation}. Existing Task Title: {issue["title"]}. Existing Task Description: {issue["description"]}. 
+        If this issue is already described in the existing task, can you update that task's title and description, especially noting the number of times the issue described in the task has been mentioned by users?
+        If the conversation captures neither a feature request nor a bug report (e.g. if the Agent was able to successfully answer the User's question), please don't update an existing task!
+        """
+        # import pdb ; pdb.set_trace()
+        messages = [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "edit_issue",
+                    "description": "Updates the title and description of a task in Linear using the Linear GraphQL API",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "new_title": {
+                                "type": "string",
+                                "description": "The updated title of the existing task resulting from the bug report and/or feature request described in the conversation",
+                            },
+                            "new_description": {
+                                "type": "string",
+                                "description": "The updated description of the existing task resulting from the bug report and/or feature request described in the conversation",
+                            },
+                        },
+                    },
+                },
+            },
+        ]
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+        response_message = response.choices[0].message
+        tool_calls = response_message.tool_calls
+        if tool_calls:
+            available_functions = {
+                "edit_issue": edit_issue,
+            }
+            for tool_call in tool_calls:
+                function_name = tool_call.function.name
+                function_to_call = available_functions[function_name]
+                function_args = json.loads(tool_call.function.arguments)
+                function_response = function_to_call(
+                    client=linear_client,
+                    issue_id=issue["id"],
+                    new_title=function_args.get("new_title"),
+                    new_description=function_args.get("new_description"),
+                )
+                issue_dict = function_response["issueUpdate"]["issue"]
+                print(f"Added information from this conversation to an existing linear task! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+                return
+    
+    # Since this conversation didn't match any of the existing tasks, or isn't describing a 
+    # bug report or feature request, we either make a new task if this does describe a bug
+    # report or feature request, or discard this altogether
+    new_task_prompt = f"""
+    If there is a feature request or bug report described in the following conversation, please create a new task for it. 
+    Otherwise, for example if the Agent was successfully able to answer a user's question, please do not create a new task!
+    Conversation: {conversation}
+    """
+    new_task_messages = [
         {
             "role": "user",
-            "content": prompt,
+            "content": new_task_prompt,
         }
     ]
-    tools = [
+    new_issue_function_tools = [
         {
             "type": "function",
             "function": {
-                "name": "handle_bug_report_or_feature_request",
-                "description": "Handles a bug report or feature request by ingesting it into Linear using their GraphQL API",
+                "name": "create_issue",
+                "description": "Creates a new task in linear using the GraphQL API",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Title of a task resulting from the bug report and/or feature request described in the conversation",
+                            "description": "Title for the task. This title summarizes the feature request/bug report described in the conversation",
                         },
                         "description": {
                             "type": "string",
-                            "description": "Description of the task resulting from the bug report or feature request described in the conversation",
-                        },
-                    },
-                    "required": ["title", "description"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "handle_other",
-                "description": "Handles queries that aren't bug reports or feature requests",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "type": "string",
-                            "description": "Description of the conversation that was neither a bug report nor a feature request",
+                            "description": "Description for the task. This description is a more length summary of the feature request/bug report described in the conversation",
                         },
                     },
                 },
@@ -176,35 +238,31 @@ def categorize_conversation(conversation: str):
     ]
     response = openai_client.chat.completions.create(
         model="gpt-4o",
-        messages=messages,
-        tools=tools,
+        messages=new_task_messages,
+        tools=new_issue_function_tools,
         tool_choice="auto",
     )
-
     response_message = response.choices[0].message
     tool_calls = response_message.tool_calls
-    # Check if the model wanted to call a function
     if tool_calls:
         available_functions = {
-            "handle_bug_report_or_feature_request": handle_bug_report_or_feature_request,
-            "handle_other": _handle_other,
+            "create_issue": create_issue,
         }
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call.function.arguments)
             function_response = function_to_call(
+                client=linear_client,
                 title=function_args.get("title"),
                 description=function_args.get("description"),
-                openai_client=openai_client,
+                team_id=LINEAR_TEAM_ID,
             )
-            for tool_call_output in function_response:
-                if tool_call_output["name"] == "create_linear_issue":
-                    issue_dict = tool_call_output["content"]["issueCreate"]["issue"]
-                    print(f"Created new linear issue for this conversation! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
-                elif tool_call_output["name"] == "edit_linear_issue":
-                    issue_dict = tool_call_output["content"]["issueUpdate"]["issue"]
-                    print(f"Added information from this conversation to an existing linear issue! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+            issue_dict = function_response["issueCreate"]["issue"]
+            print(f"Created new linear task for this conversation! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+    else:
+        print("Did not create a new task for the input conversation because it didn't describe a bug report or feature request!")
+   
 
 def test_cases():
     bug_report_1 = "[User]: 'I can't change my delivery address', [Agent]: 'Sorry for the inconvenience we will get that fixed right away'"
@@ -213,7 +271,7 @@ def test_cases():
 
     general_query_1 = "[User]: 'Hi, I can't figure out how to change my delivery address', [Agent]: 'You can change it by going to Settings > User Information > Address', [User]: 'Thanks!'"
 
-    categorize_conversation(feature_request_1)
+    categorize_conversation(bug_report_1)
 
 
 if __name__ == "__main__":

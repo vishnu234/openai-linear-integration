@@ -71,6 +71,10 @@ def list_team_issues():
                 }}
                 createdAt
                 archivedAt
+                state {{
+                  id
+                  name
+                }}
             }}
             }}
         }}
@@ -108,8 +112,8 @@ def add_issue():
             }}
         }}
         """.format(
-            title="Test Issue",
-            description="First Test Issue",
+            title="Can't change password",
+            description="User can't change the password of their account",
             linear_team_id=TEST_TEAM_ID,
         )
     )
@@ -152,4 +156,4 @@ def edit_existing_issue():
     print(result)
 
 if __name__ == "__main__":
-    list_team_issues()
+    add_issue()
