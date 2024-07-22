@@ -3,6 +3,7 @@ from gql.transport.aiohttp import AIOHTTPTransport
 
 from constants import LINEAR_KEY, LINEAR_TEAM_ID
 
+
 def user_info_example():
     transport = AIOHTTPTransport(
         url="https://api.linear.app/graphql",
@@ -86,6 +87,7 @@ def list_team_issues():
     result = client.execute(query)
     print(result)
 
+
 def add_issue():
     TEST_TEAM_ID = "a409ee5a-1f47-4e5f-bf16-332272fefacf"
 
@@ -119,6 +121,7 @@ def add_issue():
     )
     result = client.execute(query)
     print(result)
+
 
 def edit_existing_issue():
     TEST_TEAM_ID = "a409ee5a-1f47-4e5f-bf16-332272fefacf"
@@ -154,6 +157,7 @@ def edit_existing_issue():
     )
     result = client.execute(query)
     print(result)
+
 
 if __name__ == "__main__":
     add_issue()

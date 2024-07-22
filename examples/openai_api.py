@@ -2,6 +2,7 @@ from openai import OpenAI
 import json
 from constants import OPENAI_KEY
 
+
 def delivery_test():
     def get_optimal_delivery(start_location, end_location):
         if start_location == "San Francisco, USA" and end_location == "Beijing, China":
@@ -47,7 +48,9 @@ def delivery_test():
         tools=tools,
         tool_choice="auto",
     )
-    import pdb ; pdb.set_trace()
+    import pdb
+
+    pdb.set_trace()
 
 
 def online_example():
@@ -56,12 +59,14 @@ def online_example():
         if "tokyo" in location.lower():
             return json.dumps({"location": "Tokyo", "temperature": "10", "unit": unit})
         elif "san francisco" in location.lower():
-            return json.dumps({"location": "San Francisco", "temperature": "72", "unit": unit})
+            return json.dumps(
+                {"location": "San Francisco", "temperature": "72", "unit": unit}
+            )
         elif "paris" in location.lower():
             return json.dumps({"location": "Paris", "temperature": "22", "unit": unit})
         else:
             return json.dumps({"location": location, "temperature": "unknown"})
-    
+
     openai_client = OpenAI(
         api_key=OPENAI_KEY,
     )
@@ -131,6 +136,7 @@ def online_example():
             messages=messages,
         )  # get a new response from the model where it can see the function response
         return second_response
+
 
 if __name__ == "__main__":
     print(online_example())

@@ -12,12 +12,15 @@ def get_issue(client: Client, issue_id: str) -> Dict:
                 description
             }}
         }}
-        """.format(issue_id=issue_id)
+        """.format(
+            issue_id=issue_id
+        )
     )
     result = client.execute(query)
     return result
 
-# TODO(vcd): Maybe we can use GPT or some basic string parsing 
+
+# TODO(vcd): Maybe we can use GPT or some basic string parsing
 # to get the team id from a list of teams in linear?
 def list_issues(client: Client, team_id: str) -> Dict:
     query = gql(
@@ -42,10 +45,13 @@ def list_issues(client: Client, team_id: str) -> Dict:
             }}
         }}
         }}
-        """.format(team_id=team_id)
+        """.format(
+            team_id=team_id
+        )
     )
     result = client.execute(query)
     return result
+
 
 def create_issue(client: Client, title: str, description: str, team_id: str) -> Dict:
     query = gql(
@@ -75,14 +81,20 @@ def create_issue(client: Client, title: str, description: str, team_id: str) -> 
     result = client.execute(query)
     return result
 
-def edit_issue(client: Client, issue_id: str, new_title: Optional[str] = None, new_description: Optional[str] = None) -> Dict:
+
+def edit_issue(
+    client: Client,
+    issue_id: str,
+    new_title: Optional[str] = None,
+    new_description: Optional[str] = None,
+) -> Dict:
     issue = get_issue(client, issue_id)["issue"]
     if new_title is None:
         new_title = issue["title"]
     if new_description is None:
         new_description = issue["description"]
-    
-    # Replace double quotes with single quotes to avoid string 
+
+    # Replace double quotes with single quotes to avoid string
     # parsing errors in GraphQL Query
     query = gql(
         """
@@ -104,8 +116,8 @@ def edit_issue(client: Client, issue_id: str, new_title: Optional[str] = None, n
         }}
         """.format(
             issue_id=issue_id,
-            new_title=new_title.replace("\"", "'"),
-            new_description=new_description.replace("\"", "'"),
+            new_title=new_title.replace('"', "'"),
+            new_description=new_description.replace('"', "'"),
         )
     )
     result = client.execute(query)

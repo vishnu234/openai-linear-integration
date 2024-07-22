@@ -9,12 +9,11 @@ from constants import LINEAR_KEY, LINEAR_TEAM_ID, OPENAI_KEY
 # TODO: Should we pull out GPT API calls into a separate gpt_helpers.py file?
 # TODO: Should we have one team for FRs and one team for BRs?
 
+
 # Is it advantageous to have one prompt per linear task? Or one prompt for all linear tasks?
 # An evaluation suite will help answer this question.
 def categorize_conversation(conversation: str) -> None:
-    """
-
-    """
+    """ """
     transport = AIOHTTPTransport(
         url="https://api.linear.app/graphql",
         headers={"Authorization": LINEAR_KEY},
@@ -25,14 +24,13 @@ def categorize_conversation(conversation: str) -> None:
     )
 
     # First, we iterate over every task to see if this conversation matches any existing tasks
-    issues = list_issues(
-        client=linear_client,
-        team_id=LINEAR_TEAM_ID
-    )["team"]["issues"]["nodes"]
+    issues = list_issues(client=linear_client, team_id=LINEAR_TEAM_ID)["team"][
+        "issues"
+    ]["nodes"]
     for issue in issues:
         # Perhaps instead of this binary yes/no decision and iterating over each issue,
         # we can get something analogous to a confidence score from the model and maximize
-        # that across all existing issues? Or we could prompt the model to tell us which 
+        # that across all existing issues? Or we could prompt the model to tell us which
         # issue the conversation most closely resembles, if any?
         prompt = f"""Does the following conversation describe a new bug report and/or feature request that isn't described in the following existing task?
         Conversation: {conversation}. Existing Task Title: {issue["title"]}. Existing Task Description: {issue["description"]}. 
@@ -91,10 +89,12 @@ def categorize_conversation(conversation: str) -> None:
                     new_description=function_args.get("new_description"),
                 )
                 issue_dict = function_response["issueUpdate"]["issue"]
-                print(f"Added information from this conversation to an existing linear task! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+                print(
+                    f"Added information from this conversation to an existing linear task! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}"
+                )
                 return
-    
-    # Since this conversation didn't match any of the existing tasks, or isn't describing a 
+
+    # Since this conversation didn't match any of the existing tasks, or isn't describing a
     # bug report or feature request, we either make a new task if this does describe a bug
     # report or feature request, or discard this altogether
     new_task_prompt = f"""
@@ -153,10 +153,14 @@ def categorize_conversation(conversation: str) -> None:
                 team_id=LINEAR_TEAM_ID,
             )
             issue_dict = function_response["issueCreate"]["issue"]
-            print(f"Created new linear task for this conversation! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+            print(
+                f"Created new linear task for this conversation! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}"
+            )
     else:
-        print("Did not create a new task for the input conversation because it didn't describe a bug report or feature request!")
-   
+        print(
+            "Did not create a new task for the input conversation because it didn't describe a bug report or feature request!"
+        )
+
 
 def test_cases() -> None:
     bug_report_1 = "[User]: 'I can't change my delivery address', [Agent]: 'Sorry for the inconvenience we will get that fixed right away'"
