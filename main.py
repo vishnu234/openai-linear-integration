@@ -2,7 +2,7 @@ from openai import OpenAI
 from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 import json
-from typing import List
+from typing import List, Optional
 
 from linear_helpers import list_issues, create_issue, edit_issue
 from constants import LINEAR_KEY, LINEAR_TEAM_ID, OPENAI_KEY
@@ -14,25 +14,27 @@ from constants import LINEAR_KEY, LINEAR_TEAM_ID, OPENAI_KEY
 # TODO: How should we append to existing issue vs create new issue? Iterate over all existing issues?
 
 def create_linear_issue(title: str, description: str, linear_client: Client):
-    create_issue(
+    return create_issue(
         client=linear_client,
         title=title,
         description=description,
         team_id=LINEAR_TEAM_ID,
     )
 
-def edit_linear_issue(issue_id: str, new_title: str, new_description: str, linear_client: Client):
-    edit_issue(
+def edit_linear_issue(issue_id: str, new_title: Optional[str], new_description: Optional[str], linear_client: Client):
+    return edit_issue(
         client=linear_client,
         issue_id=issue_id,
-        title=new_title,
-        description=new_description,
+        new_title=new_title,
+        new_description=new_description,
     )
 
-def handle_bug_report_or_feature_request(title: str, description: str, openai_client: OpenAI, messages: List):
+def handle_bug_report_or_feature_request(title: str, description: str, openai_client: OpenAI):
     """
     Function to handle bug reports or feature requests
-    This function will check if an existing issue exists. If not, it will 
+    This function will check if an existing task exists.
+    If it does, the description and title of the task will get updated.
+    If it doesn't, then a new task will be created
     """
     gpt_function_tools = [
         {
@@ -52,7 +54,6 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
                             "description": "New description for the issue. This description contains information describing the original issue, and information describing the new related issue.",
                         },
                     },
-                    "required": ["title"],
                 },
             },
         },
@@ -67,12 +68,10 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
         team_id=LINEAR_TEAM_ID
     )["team"]["issues"]["nodes"]
     for existing_issue in issues:
-        gpt_prompt = f"Do the original issue and new issue describe the same issue? Original Issue: {existing_issue['description']}. New Issue: {description}. If yes, please add additional useful context from the new issue to the existing issue in Linear."
-        # messages.append({
-        #     "role": "user",
-        #     "content": gpt_prompt,
-        # })
-        new_messages = [
+        # TODO(vcd): Should we add title information to the prompt as well? 
+        # Maybe some sort of evaluation suite would let us converge on the right prompt
+        gpt_prompt = f"Do the original issue and new issue describe the same issue? Original Issue Description: {existing_issue['description']}. New Issue Description: {description}. If yes, please add additional useful context from the new issue to the existing issue in Linear."
+        messages = [
             {
                 "role": "user",
                 "content": gpt_prompt,
@@ -80,7 +79,7 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
         ]
         response = openai_client.chat.completions.create(
             model="gpt-4o",
-            messages=new_messages,
+            messages=messages,
             tools=gpt_function_tools,
             tool_choice="auto",
         )
@@ -90,7 +89,7 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
             available_functions = {
                 "edit_linear_issue": edit_linear_issue,
             }
-            new_messages.append(response_message)
+            tool_call_outputs = []
             for tool_call in tool_calls:
                 function_name = tool_call.function.name
                 function_to_call = available_functions[function_name]
@@ -101,7 +100,7 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
                     new_description=function_args.get("new_description"),
                     linear_client=linear_client,
                 )
-                new_messages.append(
+                tool_call_outputs.append(
                     {
                         "tool_call_id": tool_call.id,
                         "role": "tool",
@@ -109,18 +108,19 @@ def handle_bug_report_or_feature_request(title: str, description: str, openai_cl
                         "content": function_response,
                     }
                 )
-            second_response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=new_messages,
-            )  # get a new response from the model where it can see the function response
-            return second_response
+            return tool_call_outputs
     
-    create_linear_issue(title, description, linear_client)
+    return [{
+        "name": "create_linear_issue",
+        "content": create_linear_issue(title, description, linear_client),
+    }]
     
 
 def _handle_other(_description: str):
+    """ Placeholder for handling a message that isn't a bug report or feature request """
     pass
 
+# TODO: We shouldn't to separate this from dedup'ing from existing tasks
 def categorize_conversation(conversation: str):
     """
 
@@ -146,11 +146,11 @@ def categorize_conversation(conversation: str):
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Title of the bug report or feature request described in the conversation",
+                            "description": "Title of a task resulting from the bug report and/or feature request described in the conversation",
                         },
                         "description": {
                             "type": "string",
-                            "description": "Description of the bug report or feature request described in the conversation",
+                            "description": "Description of the task resulting from the bug report or feature request described in the conversation",
                         },
                     },
                     "required": ["title", "description"],
@@ -189,7 +189,6 @@ def categorize_conversation(conversation: str):
             "handle_bug_report_or_feature_request": handle_bug_report_or_feature_request,
             "handle_other": _handle_other,
         }
-        messages.append(response_message)
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             function_to_call = available_functions[function_name]
@@ -198,21 +197,14 @@ def categorize_conversation(conversation: str):
                 title=function_args.get("title"),
                 description=function_args.get("description"),
                 openai_client=openai_client,
-                messages=messages,
             )
-            messages.append(
-                {
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": function_response,
-                }
-            )  # extend conversation with function response
-        second_response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-        )  # get a new response from the model where it can see the function response
-        return second_response
+            for tool_call_output in function_response:
+                if tool_call_output["name"] == "create_linear_issue":
+                    issue_dict = tool_call_output["content"]["issueCreate"]["issue"]
+                    print(f"Created new linear issue for this conversation! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
+                elif tool_call_output["name"] == "edit_linear_issue":
+                    issue_dict = tool_call_output["content"]["issueUpdate"]["issue"]
+                    print(f"Added information from this conversation to an existing linear issue! \nID: {issue_dict['id']} \nTitle: {issue_dict['title']} \nDescription: {issue_dict['description']}")
 
 def test_cases():
     bug_report_1 = "[User]: 'I can't change my delivery address', [Agent]: 'Sorry for the inconvenience we will get that fixed right away'"
@@ -221,7 +213,7 @@ def test_cases():
 
     general_query_1 = "[User]: 'Hi, I can't figure out how to change my delivery address', [Agent]: 'You can change it by going to Settings > User Information > Address', [User]: 'Thanks!'"
 
-    categorize_conversation(bug_report_1)
+    categorize_conversation(feature_request_1)
 
 
 if __name__ == "__main__":
