@@ -20,4 +20,4 @@ The existing function could definitely be improved and tested on a larger suite 
 
 `python main.py`
 
-I created a fresh Python 3.10 Anaconda environment for this project
+I created a fresh Python 3.10 Anaconda environment for this project, although any python virtual environment should suffice
